@@ -1,0 +1,29 @@
+{
+  "name": "coral",
+  "version": "1.0.0",
+  "description": "upload and manage files",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cthierer/coral.git"
+  },
+  "author": "Chris Thierer <cthierer1@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/cthierer/coral/issues"
+  },
+  "homepage": "https://github.com/cthierer/coral#readme",
+  "devDependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-loader": "^7.1.2",
+    "babel-plugin-transform-builtin-extend": "^1.1.2",
+    "babel-plugin-transform-object-rest-spread": "^6.26.0",
+    "babel-preset-env": "^1.6.1",
+    "eslint": "^4.8.0",
+    "eslint-config-airbnb": "^16.0.0",
+    "eslint-plugin-import": "^2.7.0",
+    "eslint-plugin-jsx-a11y": "^6.0.2",
+    "eslint-plugin-react": "^7.4.0",
+    "npm-run-all": "^4.1.1"
+  }
+}
