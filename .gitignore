@@ -58,9 +58,10 @@ typings/
 .env
 
 # custom
-albums
 dist
 public
+lib
 .DS_Store
 ._.DS_Store
 *.swp
+*.zip

@@ -13,9 +13,13 @@
     "url": "https://github.com/cthierer/coral/issues"
   },
   "homepage": "https://github.com/cthierer/coral#readme",
+  "scripts": {
+    "build": "make build",
+    "prestart": "run-p build",
+    "start": "node ./server.js | pino"
+  },
   "devDependencies": {
     "babel-cli": "^6.26.0",
-    "babel-loader": "^7.1.2",
     "babel-plugin-transform-builtin-extend": "^1.1.2",
     "babel-plugin-transform-object-rest-spread": "^6.26.0",
     "babel-preset-env": "^1.6.1",
@@ -24,6 +28,22 @@
     "eslint-plugin-import": "^2.7.0",
     "eslint-plugin-jsx-a11y": "^6.0.2",
     "eslint-plugin-react": "^7.4.0",
+    "node-jq": "^0.7.0",
     "npm-run-all": "^4.1.1"
-  }
+  },
+  "dependencies": {
+    "aws-sdk": "^2.149.0",
+    "bluebird": "^3.5.1",
+    "dotenv": "^4.0.0",
+    "file-type": "^7.2.0",
+    "koa": "^2.4.1",
+    "koa-pino-logger": "^2.1.1",
+    "koa-route": "^3.2.0",
+    "pino": "^4.10.0",
+    "uuid": "^3.1.0"
+  },
+  "files": [
+    "lib",
+    "index.js"
+  ]
 }
