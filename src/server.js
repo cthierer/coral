@@ -24,6 +24,15 @@ server.use(logger({
 }))
 
 // mount the upload handler
-server.use(route.post('/galleries/:name/images', wrapLambda(handlers.upload, ['repo'])))
+server.use(route.post(
+  '/galleries/:name/images',
+  wrapLambda(handlers.upload, ['repo']),
+))
+
+// mount the publish handler
+server.use(route.put(
+  '/galleries/:name/images/:id/publish',
+  wrapLambda(handlers.publish, ['repo', 'name']),
+))
 
 export default server

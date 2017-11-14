@@ -31,6 +31,8 @@ Resources:
         - Key: Product
           Value: !Ref Product
     DeletionPolicy: Retain
+  PublishQueue:
+    Type: AWS::SQS::Queue
   RoleWriteS3:
     Type: AWS::IAM::Role
     Properties:
@@ -65,6 +67,14 @@ Resources:
                   - 'logs:GetLogEvents'
                   - 'logs:FilterLogEvents'
                 Resource: '*'
+        - PolicyName: PushPublishQueue
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'sqs:SendMessage'
+                Resource: '*'
   UploadLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -77,6 +87,29 @@ Resources:
           NODE_ENV: production
           LOG_LEVEL: !FindInMap [Environments, !Ref Environment, LogLevel]
       Handler: index.upload
+      Role: !GetAtt RoleWriteS3.Arn
+      Runtime: nodejs6.10
+      Timeout: 300
+      Tags:
+        - Key: Project
+          Value: coral
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: !Ref Product
+  PublishLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: "exports.upload = () => console.log('hello, world')"
+      Description: Mark a file for publication
+      Environment:
+        Variables:
+          STAGING_BUCKET: !Ref StagingBucket
+          PUBLISH_QUEUE: !Ref PublishQueue
+          NODE_ENV: production
+          LOG_LEVEL: !FindInMap [Environments, !Ref Environment, LogLevel]
+      Handler: index.publish
       Role: !GetAtt RoleWriteS3.Arn
       Runtime: nodejs6.10
       Timeout: 300
@@ -112,7 +145,23 @@ Resources:
             - !Ref AWS::AccountId
             - ':'
             - !Ref CoralApi
-            - '/*/POST/galleries/*/images'
+            - '/*'
+  CoralApiPublishLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt PublishLambda.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        !Join
+          - ''
+          - - 'arn:aws:execute-api:'
+            - !Ref AWS::Region
+            - ':'
+            - !Ref AWS::AccountId
+            - ':'
+            - !Ref CoralApi
+            - '/*'
   CoralApiProdStage:
     DependsOn:
       - ApiGatewayAccount
@@ -182,6 +231,18 @@ Resources:
       RestApiId: !Ref CoralApi
       ParentId: !Ref GalleryResource
       PathPart: images
+  ImageResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref CoralApi
+      ParentId: !Ref ImagesResource
+      PathPart: '{image}'
+  StatusResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref CoralApi
+      ParentId: !Ref ImageResource
+      PathPart: publish
   UploadRequest:
     DependsOn:
       - CoralApiLambdaPermission
@@ -223,4 +284,50 @@ Resources:
       MethodResponses:
         - StatusCode: 201
         - StatusCode: 400
+        - StatusCode: 500
+  PublishRequest:
+    DependsOn:
+      - CoralApiPublishLambdaPermission
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: PUT
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_TEMPLATES
+        ContentHandling: CONVERT_TO_TEXT
+        Uri:
+          !Join
+            - ''
+            - - 'arn:aws:apigateway:'
+              - !Ref AWS::Region
+              - ':lambda:path/2015-03-31/functions/'
+              - !GetAtt PublishLambda.Arn
+              - '/invocations'
+        IntegrationResponses:
+          - StatusCode: 202
+            ResponseTemplates:
+              application/json: "$input.json('$.result')"
+          - StatusCode: 400
+            SelectionPattern: 'Bad Request.*'
+            ResponseTemplates:
+              application/json: "{ \"message\": $input.json('$.errorMessage') }"
+          - StatusCode: 404
+            SelectionPattern: 'Not Found.*'
+            ResponseTemplates:
+              application/json: "{ \"message\": $input.json('$.errorMessage') }"
+          - StatusCode: 500
+            SelectionPattern: '[A-Za-z0-1].*'
+            ResponseTemplates:
+              application/json: "{ \"message\": \"An unexpected error occurred.\" }"
+        RequestTemplates:
+          application/json: "{ \"name\": \"$input.params('image')\", \"repo\": \"$input.params('gallery')\" }"
+          text/plain: "{ \"name\": \"$input.params('image')\", \"repo\": \"$input.params('gallery')\" }"
+      ResourceId: !Ref StatusResource
+      RestApiId: !Ref CoralApi
+      MethodResponses:
+        - StatusCode: 202
+        - StatusCode: 400
+        - StatusCode: 404
         - StatusCode: 500

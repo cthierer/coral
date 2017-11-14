@@ -35,8 +35,16 @@ update-stack: validate-cf
 pack: build
 	@./bin/pack.sh
 
-deploy: pack
+deploy-upload: pack
 	@aws lambda update-function-code \
 		--function-name "$$(aws cloudformation describe-stack-resources --stack-name coral-$(env) --logical-resource-id UploadLambda | ./node_modules/node-jq/bin/jq -r '.StackResources[0].PhysicalResourceId')" \
 		--zip-file fileb://coral.zip \
 		--publish
+
+deploy-publish: pack
+	@aws lambda update-function-code \
+		--function-name "$$(aws cloudformation describe-stack-resources --stack-name coral-$(env) --logical-resource-id PublishLambda | ./node_modules/node-jq/bin/jq -r '.StackResources[0].PhysicalResourceId')" \
+		--zip-file fileb://coral.zip \
+		--publish
+
+deploy: deploy-upload deploy-publish

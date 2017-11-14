@@ -22,7 +22,7 @@ function getBody(req) {
     })
 
     req.on('end', () => {
-      resolve(body.toString('base64'))
+      resolve(body ? body.toString('base64') : undefined)
     })
 
     req.on('error', (err) => {
