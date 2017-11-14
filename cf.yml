@@ -33,6 +33,8 @@ Resources:
     DeletionPolicy: Retain
   PublishQueue:
     Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 300
   RoleWriteS3:
     Type: AWS::IAM::Role
     Properties:
