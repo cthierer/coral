@@ -8,7 +8,6 @@ import config from './config'
 import { RequestError } from './errors'
 
 const s3 = new aws.S3()
-const sqs = new aws.SQS()
 
 /**
  * Base pino logger for all publish requests.
@@ -25,51 +24,51 @@ const baseLogger = pino({
  * @param {string} [bucket] S3 bucket expected to contain the Key.
  * @returns {Promise<boolean>} True if the specified key exists.
  */
-async function keyExists(key, bucket = config.get('staging_bucket')) {
-  return new Promise((resolve, reject) => {
-    s3.headObject({
+async function keyExists(
+  key,
+  bucket = config.get('staging_bucket'),
+) {
+  try {
+    await s3.headObject({
       Bucket: bucket,
       Key: key,
-    }, (err) => {
-      if (err) {
-        if (err.code === 'NoSuchKey') {
-          resolve(false)
-        } else {
-          reject(err)
-        }
-        return
-      }
+    }).promise()
+  } catch (err) {
+    if (err.code === 'NoSuchKey' || err.code === 'NotFound') {
+      return false
+    }
+    throw err
+  }
 
-      resolve(true)
-    })
-  })
+  return true
 }
 
 /**
- * Push a publish request into the queue.
- * This request is queued until a back-end service can process it.
- * @param {string} key The S3 object to publish.
- * @param {string} bucket The S3 bucket containing the object.
- * @param {string} [queue] The URL for the queue to send a message to.
- * @returns {Promise<string>} The ID for the message in the queue.
+ * Move a file from one S3 bucket to another.
+ * @param {string} key The key of the file to move.
+ * @param {string} [sourceBucket] The bucket to move the resource from.
+ * @param {string} [destinationBucket] The bucket to move the resource to.
+ * @returns {Promise<string>} The key of the moved file in the new bucket.
  */
-async function pushToQueue(key, bucket, queue = config.get('publish_queue')) {
-  const payload = { key, bucket }
-  const payloadStr = JSON.stringify(payload)
+async function moveFile(
+  key,
+  sourceBucket = config.get('staging_bucket'),
+  destinationBucket = config.get('cdn_bucket'),
+) {
+  const copySource = `/${sourceBucket}/${key}`
 
-  return new Promise((resolve, reject) => {
-    sqs.sendMessage({
-      QueueUrl: queue,
-      MessageBody: payloadStr,
-    }, (err, data) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      const { MessageId: id } = data || {}
-      resolve(id)
-    })
-  })
+  await s3.copyObject({
+    Bucket: destinationBucket,
+    Key: key,
+    CopySource: copySource,
+  }).promise()
+
+  await s3.deleteObject({
+    Bucket: sourceBucket,
+    Key: key,
+  }).promise()
+
+  return key
 }
 
 /**
@@ -93,14 +92,14 @@ async function pushToQueue(key, bucket, queue = config.get('publish_queue')) {
 export default async function (event, { awsRequestId: reqId }, callback) {
   const logger = baseLogger.child({ reqId })
   const { name, repo } = event
+  const namespace = config.get('namespace')
 
   logger.debug({ event }, 'processing publish event')
 
-  const key = `${repo}/${name}`
-  const bucket = config.get('staging_bucket')
+  const key = `${namespace}/${repo}/${name}`
 
   try {
-    const exists = await keyExists(key, bucket)
+    const exists = await keyExists(key)
     if (!exists) throw new RequestError(`file ${key} does not exist`, 404)
     logger.debug('verified that file "%s" exists', key)
   } catch (err) {
@@ -109,22 +108,24 @@ export default async function (event, { awsRequestId: reqId }, callback) {
     return
   }
 
-  let messageId
-
   try {
-    messageId = await pushToQueue(key, bucket)
+    await moveFile(key)
   } catch (err) {
-    logger.error({ err }, 'problem pushing file "%s" into the sqs queue')
+    logger.error({ err }, 'problem moving file to CDN bucket')
     callback(err)
     return
   }
 
-  logger.info({ messageId }, 'successfully pushed "%s" into publish queue: %s', key, messageId)
+  logger.info('successfully published "%s', key)
+
+  const [, id] = /([a-z0-9-]+)\.[a-z]{3,}$/i.exec(key)
+  const href = `${config.get('cdn_host')}/${key}`
 
   callback(null, {
     status: 202,
     result: {
-      id: messageId,
+      id,
+      href,
     },
   })
 }

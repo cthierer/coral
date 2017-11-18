@@ -8,6 +8,8 @@ import logger from 'koa-pino-logger'
 import { wrapLambda } from './middleware'
 import * as handlers from './index'
 import config from './config'
+import zipParams from './utils/zipParams'
+import wrapS3Event from './utils/wrapS3Event'
 
 /**
  * A Koa2 server, used for running the application locally.
@@ -26,13 +28,19 @@ server.use(logger({
 // mount the upload handler
 server.use(route.post(
   '/galleries/:name/images',
-  wrapLambda(handlers.upload, ['repo']),
+  wrapLambda(handlers.upload, zipParams(['repo'])),
 ))
 
 // mount the publish handler
 server.use(route.put(
   '/galleries/:name/images/:id/publish',
-  wrapLambda(handlers.publish, ['repo', 'name']),
+  wrapLambda(handlers.publish, zipParams(['repo', 'name'])),
+))
+
+// mount to trigger processing of published resources
+server.use(route.post(
+  '/process/:repo/:id',
+  wrapLambda(handlers.process, wrapS3Event(config.get('cdn_bucket'))),
 ))
 
 export default server

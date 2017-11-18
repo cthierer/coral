@@ -2,7 +2,7 @@
 lint:
 	@./node_modules/.bin/eslint --ext .js --cache src
 
-build: lint
+build:
 	@rm -rf lib
 	@./node_modules/.bin/babel src --out-dir lib
 
@@ -33,7 +33,9 @@ update-stack: validate-cf
 			ParameterKey=Product,UsePreviousValue=true
 
 pack: build
-	@./bin/pack.sh
+	@rm coral.zip
+	@docker build --tag coral:latest --quiet . > /dev/null
+	@docker run coral:latest cat package.zip > coral.zip
 
 deploy-upload: pack
 	@aws lambda update-function-code \
@@ -47,4 +49,10 @@ deploy-publish: pack
 		--zip-file fileb://coral.zip \
 		--publish
 
-deploy: deploy-upload deploy-publish
+deploy-process: pack
+	@aws lambda update-function-code \
+		--function-name "$$(aws cloudformation describe-stack-resources --stack-name coral-$(env) --logical-resource-id ProcessLambda | ./node_modules/node-jq/bin/jq -r '.StackResources[0].PhysicalResourceId')" \
+		--zip-file fileb://coral.zip \
+		--publish
+
+deploy: deploy-upload deploy-publish deploy-process

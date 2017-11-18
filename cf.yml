@@ -16,8 +16,12 @@ Mappings:
   Environments:
     develop:
       LogLevel: 'debug'
+      CdnBucket: 'cdn-develop.stage5clingan.com'
+      CdnHost: 'https://cdn-develop.stage5clingan.com'
     production:
       LogLevel: 'info'
+      CdnBucket: 'cdn.stage5clingan.com'
+      CdnHost: 'https://cdn.stage5clingan.com'
 Resources:
   StagingBucket:
     Type: AWS::S3::Bucket
@@ -31,10 +35,6 @@ Resources:
         - Key: Product
           Value: !Ref Product
     DeletionPolicy: Retain
-  PublishQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      VisibilityTimeout: 300
   RoleWriteS3:
     Type: AWS::IAM::Role
     Properties:
@@ -69,14 +69,6 @@ Resources:
                   - 'logs:GetLogEvents'
                   - 'logs:FilterLogEvents'
                 Resource: '*'
-        - PolicyName: PushPublishQueue
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'sqs:SendMessage'
-                Resource: '*'
   UploadLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -108,13 +100,37 @@ Resources:
       Environment:
         Variables:
           STAGING_BUCKET: !Ref StagingBucket
-          PUBLISH_QUEUE: !Ref PublishQueue
+          CDN_BUCKET: !FindInMap [Environments, !Ref Environment, CdnBucket]
+          CDN_HOST: !FindInMap [Environments, !Ref Environment, CdnHost]
           NODE_ENV: production
           LOG_LEVEL: !FindInMap [Environments, !Ref Environment, LogLevel]
       Handler: index.publish
       Role: !GetAtt RoleWriteS3.Arn
       Runtime: nodejs6.10
       Timeout: 300
+      Tags:
+        - Key: Project
+          Value: coral
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: !Ref Product
+  ProcessLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: "exports.process = () => console.log('hello, world')"
+      Description: Process a published file
+      Environment:
+        Variables:
+          CDN_HOST: !FindInMap [Environments, !Ref Environment, CdnHost]
+          NODE_ENV: production
+          LOG_LEVEL: !FindInMap [Environments, !Ref Environment, LogLevel]
+      Handler: index.process
+      Role: !GetAtt RoleWriteS3.Arn
+      Runtime: nodejs6.10
+      Timeout: 300
+      MemorySize: 256
       Tags:
         - Key: Project
           Value: coral

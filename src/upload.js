@@ -51,6 +51,7 @@ function getFileMeta(buffer) {
   const fileName = `${id}.${ext}`
 
   return {
+    id,
     size: Buffer.byteLength(buffer),
     type: mime,
     name: fileName,
@@ -79,6 +80,7 @@ function getFileMeta(buffer) {
 export default function (event, { awsRequestId: reqId }, callback) {
   const logger = baseLogger.child({ reqId })
   const { file, repo } = event
+  const namespace = config.get('namespace')
   let fileMeta
 
   logger.debug({ event }, 'processing upload event')
@@ -102,16 +104,15 @@ export default function (event, { awsRequestId: reqId }, callback) {
     return
   }
 
-  logger.debug({ repo, ...fileMeta }, 'uploading file to s3')
+  logger.debug({ repo, namespace, ...fileMeta }, 'uploading file to s3')
 
-  const filePath = `${repo}/${fileMeta.name}`
+  const filePath = `${namespace}/${repo}/${fileMeta.name}`
 
   s3.putObject({
     Bucket: config.get('staging_bucket'),
     Key: filePath,
     Body: fileBuffer,
     ContentType: fileMeta.type,
-    Metadata: { repo },
   }, (err) => {
     if (err) {
       logger.error({ err }, 'problem uploading file to s3')
