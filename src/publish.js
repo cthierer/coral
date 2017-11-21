@@ -3,11 +3,9 @@
  */
 
 import pino from 'pino'
-import aws from 'aws-sdk'
 import config from './config'
 import { RequestError } from './errors'
-
-const s3 = new aws.S3()
+import { keyExists, moveFile } from './services/s3'
 
 /**
  * Base pino logger for all publish requests.
@@ -17,59 +15,6 @@ const baseLogger = pino({
   name: 'coral.publish',
   level: config.get('logging.level'),
 })
-
-/**
- * Check if a key exists in S3.
- * @param {string} key The Key for the object to check.
- * @param {string} [bucket] S3 bucket expected to contain the Key.
- * @returns {Promise<boolean>} True if the specified key exists.
- */
-async function keyExists(
-  key,
-  bucket = config.get('staging_bucket'),
-) {
-  try {
-    await s3.headObject({
-      Bucket: bucket,
-      Key: key,
-    }).promise()
-  } catch (err) {
-    if (err.code === 'NoSuchKey' || err.code === 'NotFound') {
-      return false
-    }
-    throw err
-  }
-
-  return true
-}
-
-/**
- * Move a file from one S3 bucket to another.
- * @param {string} key The key of the file to move.
- * @param {string} [sourceBucket] The bucket to move the resource from.
- * @param {string} [destinationBucket] The bucket to move the resource to.
- * @returns {Promise<string>} The key of the moved file in the new bucket.
- */
-async function moveFile(
-  key,
-  sourceBucket = config.get('staging_bucket'),
-  destinationBucket = config.get('cdn_bucket'),
-) {
-  const copySource = `/${sourceBucket}/${key}`
-
-  await s3.copyObject({
-    Bucket: destinationBucket,
-    Key: key,
-    CopySource: copySource,
-  }).promise()
-
-  await s3.deleteObject({
-    Bucket: sourceBucket,
-    Key: key,
-  }).promise()
-
-  return key
-}
 
 /**
  * @typedef {Object} PublishEvent
@@ -93,13 +38,15 @@ export default async function (event, { awsRequestId: reqId }, callback) {
   const logger = baseLogger.child({ reqId })
   const { name, repo } = event
   const namespace = config.get('namespace')
+  const stagingBucket = config.get('staging_bucket')
+  const destinationBucket = config.get('cdn_bucket')
 
   logger.debug({ event }, 'processing publish event')
 
   const key = `${namespace}/${repo}/${name}`
 
   try {
-    const exists = await keyExists(key)
+    const exists = await keyExists(key, stagingBucket)
     if (!exists) throw new RequestError(`file ${key} does not exist`, 404)
     logger.debug('verified that file "%s" exists', key)
   } catch (err) {
@@ -109,7 +56,7 @@ export default async function (event, { awsRequestId: reqId }, callback) {
   }
 
   try {
-    await moveFile(key)
+    await moveFile(key, stagingBucket, destinationBucket)
   } catch (err) {
     logger.error({ err }, 'problem moving file to CDN bucket')
     callback(err)

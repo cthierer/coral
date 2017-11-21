@@ -1,18 +1,18 @@
+/**
+ * @module coral/process
+ */
 
 import { basename, extname, dirname } from 'path'
 import pino from 'pino'
-import aws from 'aws-sdk'
-import fileType from 'file-type'
 import sharp from 'sharp'
 import config from './config'
+import { getFileBody, putObject } from './services/s3'
 
 /**
  * Image breakpoints to resize to.
  * @type {Array<number>}
  */
 const BREAKPOINTS = [576, 768, 992, 1200]
-
-const s3 = new aws.S3()
 
 /**
  * Base pino logger for all publish requests.
@@ -23,39 +23,68 @@ const baseLogger = pino({
   level: config.get('logging.level'),
 })
 
-/**
- * Read the contents of a file from S3.
- * @param {string} key The key to read.
- * @param {string} bucket The bucket to read from.
- * @returns {Promise<Buffer>} The file contents.
- */
-async function getFileBody(key, bucket) {
-  const { Body: body } = await s3.getObject({
-    Key: key,
-    Bucket: bucket,
-  }).promise()
+function parseFileParts(file) {
+  const directory = dirname(file)
+  const extension = extname(file)
+  const filename = basename(file, extension)
 
-  return body
+  return { directory, extension, filename }
 }
 
 /**
- * Add an object to S3.
- * @param {string} key The key for the new S3 resource.
- * @param {Buffer} buffer The contents of the key.
- * @param {string} bucket The bucket to write to.
- * @returns {Promise<string>} The key of the written file.
+ * @typedef ResizedImage
+ * @property {number} size The size if the image.
+ * @property {string} img The key to the image in S3.
  */
-async function putObject(key, buffer, bucket) {
-  const { mime } = fileType(buffer) || {}
 
-  await s3.putObject({
-    Bucket: bucket,
-    Key: key,
-    Body: buffer,
-    ContentType: mime,
-  }).promise()
+/**
+ * Resize the image based on the provided breakpoints.
+ * @param {Sharp} image A Sharp object, initialized with the image to resize.
+ * @param {FileDescriptor} file A description of the original file, which will
+ *  be used to build the filename of the resized file.
+ * @param {boolean} isPortrait Whether or not the image is portrait or not.
+ *  This determines how the image is resized.
+ * @param {string} bucket The S3 bucket to save the file to.
+ * @param {number[]} [breakpoints] Screen widths to resize the image for.
+ * @returns {ResizedImage[]} The images that were resized and written to S3.
+ */
+async function resizeImages(
+  image,
+  { directory, filename, extension },
+  isPortrait,
+  bucket,
+  breakpoints = BREAKPOINTS,
+) {
+  const resized = await Promise.all(breakpoints.map(async (desired) => {
+    const desiredWidth = isPortrait ? null : desired
+    const desiredHeight = isPortrait ? desired : null
+    const destKey = `${directory}/${filename}_${desired}${extension}`
 
-  return key
+    try {
+      // perform the resize  using sharp
+      const resizedBody = await image
+        .resize(desiredWidth, desiredHeight)
+        .toBuffer()
+
+      // store the resized image on S3
+      await putObject(destKey, resizedBody, bucket)
+    } catch (err) {
+      baseLogger.error({
+        err,
+        desiredWidth,
+        desiredHeight,
+        destKey,
+      }, 'unable to resize image')
+
+      // eat the error, continue processing
+      return null
+    }
+
+    return { size: desired, img: destKey }
+  }))
+
+  // filter out any failed images
+  return resized.filter(resizedImage => !!resizedImage)
 }
 
 /**
@@ -77,10 +106,10 @@ async function putObject(key, buffer, bucket) {
 
 /**
  * @typedef ProcessedImage
- * @property {string} id An unique ID for this image.
- * @property {string} keyBase The base path to this image.
+ * @property {string} filename An unique ID for this image.
+ * @property {string} directory The base path to this image.
  * @property {string} bucket The s3 bucket storing this image.
- * @property {GallyerImage} payload Description of the gallery image.
+ * @property {Gallery} payload Description of the gallery image.
  */
 
 /**
@@ -106,49 +135,35 @@ async function processImage({ key, bucket }, prefix = config.get('cdn_host')) {
   }
 
   // parse out the path of the image
-  const directory = dirname(key)
-  const extension = extname(key)
-  const filename = basename(key, extension)
+  const fileDescriptor = parseFileParts(key)
 
   // determine the full size of the image
   const image = sharp(body)
   const { width, height } = await image.metadata()
-  const isPortrait = height >= width
 
   // resize the image into several images based on the breakpoints
-  const resized = await Promise.all(BREAKPOINTS.map(async (desired) => {
-    const desiredWidth = isPortrait ? null : desired
-    const desiredHeight = isPortrait ? desired : null
-    const destKey = `${directory}/${filename}_${desired}${extension}`
-
-    const resizedBody = await image
-      .resize(desiredWidth, desiredHeight)
-      .toBuffer()
-
-    // store the resized image on S3
-    await putObject(destKey, resizedBody, bucket)
-
-    return { size: desired, img: destKey }
-  }))
+  const resized = await resizeImages(
+    image,
+    fileDescriptor,
+    (height >= width),
+    bucket,
+  )
 
   // build metadata about the processed image
   const [{ img: thumbnail }] = resized
-  const srcSet = resized.map(({ size, img }) => `${prefix}/${img} ${size}w`)
-  const src = `${prefix}/${thumbnail}`
-  const linkTo = `${prefix}/${key}`
+  const payload = {
+    src: `${prefix}/${thumbnail}`,
+    srcSet: resized.map(({ size, img }) => `${prefix}/${img} ${size}w`),
+    linkTo: `${prefix}/${key}`,
+    width,
+    height,
+  }
 
   // build the result
   return {
-    id: filename,
-    keyBase: directory,
+    ...fileDescriptor,
     bucket,
-    payload: {
-      src,
-      srcSet,
-      width,
-      height,
-      linkTo,
-    },
+    payload,
   }
 }
 
@@ -197,12 +212,12 @@ export default async function process(
 
     // save meta about the image to s3
     await processed.map(async ({
-      id,
-      keyBase,
+      filename,
+      directory,
       bucket,
       payload,
     }) => {
-      const key = `_meta/${keyBase}/${id}.json`
+      const key = `_meta/${directory}/${filename}.json`
       const body = JSON.stringify(payload)
       return putObject(key, Buffer.from(body, 'utf8'), bucket)
     })
