@@ -130,7 +130,7 @@ Resources:
       Role: !GetAtt RoleWriteS3.Arn
       Runtime: nodejs6.10
       Timeout: 300
-      MemorySize: 256
+      MemorySize: 640
       Tags:
         - Key: Project
           Value: coral
