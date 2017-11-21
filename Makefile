@@ -2,7 +2,7 @@
 lint:
 	@./node_modules/.bin/eslint --ext .js --cache src
 
-build:
+build: lint
 	@rm -rf lib
 	@./node_modules/.bin/babel src --out-dir lib
 
