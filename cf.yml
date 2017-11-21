@@ -138,6 +138,27 @@ Resources:
           Value: !Ref Environment
         - Key: Product
           Value: !Ref Product
+  BuildIndexLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: "exports.process = () => console.log('hello, world')"
+      Description: Build an index based on metadata
+      Environment:
+        Variables:
+          NODE_ENV: production
+          LOG_LEVEL: !FindInMap [Environments, !Ref Environment, LogLevel]
+      Handler: index.buildIndex
+      Role: !GetAtt RoleWriteS3.Arn
+      Runtime: nodejs6.10
+      Timeout: 300
+      Tags:
+        - Key: Project
+          Value: coral
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: !Ref Product
   CoralApi:
     Type: AWS::ApiGateway::RestApi
     Properties:

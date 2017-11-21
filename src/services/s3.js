@@ -42,6 +42,23 @@ export async function keyExists(key, bucket) {
 }
 
 /**
+ * List all contents in a directory in S3.
+ * @param {string} directory The key prefix (directory) to list.
+ * @param {string} bucket The bucket to query.
+ * @param {number} [limit=100] The maximum number of results to return.
+ * @returns {Object[]} Description of S3 objects.
+ */
+export async function listContents(directory, bucket, limit = 100) {
+  const { Contents: contents } = await s3.listObjects({
+    Bucket: bucket,
+    Prefix: directory,
+    MaxKeys: limit,
+  }).promise()
+
+  return contents
+}
+
+/**
  * Move a file from one S3 bucket to another.
  * @param {string} key The key of the file to move.
  * @param {string} sourceBucket The bucket to move the resource from.

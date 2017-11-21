@@ -34,5 +34,28 @@ Filter:
     Rules:
       - Name: "Prefix"
         Value: "galleries/"
-Function: !GetAtt ProcessLambda.Arn
+    Function: !GetAtt ProcessLambda.Arn
+```
+
+And, to fire the `BuildIndexLambda` on create and delete events:
+
+```yaml
+Event: "s3:ObjectCreated:*"
+Filter:
+  S3Key:
+    Rules:
+      - Name: "Prefix"
+        Value: "_meta/"
+      - Name: "Suffix"
+        Value: "json"
+    Function: !GetAtt BuildIndexLambda.Arn
+Event: "s3:ObjectRemoved:*"
+Filter:
+  S3Key:
+    Rules:
+      - Name: "Prefix"
+        Value: "_meta/"
+      - Name: "Suffix"
+        Value: "json"
+    Function: !GetAtt BuildIndexLambda.Arn
 ```

@@ -55,4 +55,10 @@ deploy-process: pack
 		--zip-file fileb://coral.zip \
 		--publish
 
-deploy: deploy-upload deploy-publish deploy-process
+deploy-index: pack
+	@aws lambda update-function-code \
+		--function-name "$$(aws cloudformation describe-stack-resources --stack-name coral-$(env) --logical-resource-id BuildIndexLambda | ./node_modules/node-jq/bin/jq -r '.StackResources[0].PhysicalResourceId')" \
+		--zip-file fileb://coral.zip \
+		--publish
+
+deploy: deploy-upload deploy-publish deploy-process deploy-index
