@@ -19,6 +19,12 @@ Deploy the application:
 $ make env=develop deploy
 ```
 
+Publish client code to S3:
+
+```
+$ make env=develop publish
+```
+
 ## Manual configuration
 
 The destination S3 bucket (the `cdn_bucket` in the source code) is _not_

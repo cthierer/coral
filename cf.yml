@@ -22,6 +22,9 @@ Mappings:
       LogLevel: 'info'
       CdnBucket: 'cdn.stage5clingan.com'
       CdnHost: 'https://cdn.stage5clingan.com'
+Outputs:
+  CdnBucket:
+    Value: !FindInMap [Environments, !Ref Environment, CdnBucket]
 Resources:
   StagingBucket:
     Type: AWS::S3::Bucket
